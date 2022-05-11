@@ -43,6 +43,7 @@ var WebGuiHandler       = require('./webGuiHandler');
 var FunctionalComponent = require('./functionalComponent');
 var SyncManager         = require('./syncManager');
 var events              = require('events');
+var udp                 = require('dgram');
 
 // =======================================================================================
 // Constants
@@ -882,6 +883,14 @@ var transitions =
             component.lastTimestamp = parameters.timestamp;
             component.csvBuffer += Object.values(parameters).join() + '\n';
 
+            // udp
+            var data = Buffer.from(Object.values(parameters).join() + '\n');
+            component.udpclient.send(data,2222,'localhost',function(error){
+                if(error){
+                client.close();
+                }
+            });
+
             component.gui.sendGuiEvent( 'sensorOrientation', parameters );
 	    }
     },
@@ -1056,6 +1065,7 @@ class SensorServer extends FunctionalComponent
         this.measuringSensors   = [];
         this.discoveredSensor   = null;
         this.fileStream         = null;
+        this.udpclient          = null;
         this.csvBuffer          = "";
         this.recordingStartime  = 0;
         this.measuringPayloadId = 0;
@@ -1102,6 +1112,7 @@ function startRecordingToFile( component, name )
         return;
     }
 
+    // filestream
     component.fileStream = fs.createWriteStream( fullPath );
     
     const hrTime = process.hrtime();
@@ -1119,6 +1130,54 @@ function startRecordingToFile( component, name )
     {
         component.eventHandler( 'fsClose' );
     });
+
+    // udp
+    component.udpclient = udp.createSocket('udp4');
+
+    // // emits when any error occurs
+    // component.udpserver.on('error',function(error){
+    //     console.log('Error: ' + error);
+    //     component.udpserver.close();
+    // });
+
+    // // emits on new datagram msg
+    // component.udpserver.on('message',function(msg,info){
+    //     console.log('Data received from client : ' + msg.toString());
+    //     console.log('Received %d bytes from %s:%d\n',msg.length, info.address, info.port);
+
+    // //sending msg
+    // component.udpserver.send(msg,info.port,'localhost',function(error){
+    //     if(error){
+    //     client.close();
+    //     }else{
+    //     console.log('Data sent !!!');
+    //     }
+    
+    // });
+    
+    // });
+
+    // //emits when socket is ready and listening for datagram msgs
+    // component.udpserver.on('listening',function(){
+    //     var address = component.udpserver.address();
+    //     var port = address.port;
+    //     var family = address.family;
+    //     var ipaddr = '127.0.0.1'; //address.address
+    //     console.log('Server is listening at port' + port);
+    //     console.log('Server ip :' + ipaddr);
+    //     console.log('Server is IP4/IP6 : ' + family);
+    // });
+    
+    // //emits after the socket is closed using socket.close();
+    // component.udpserver.on('close',function(){
+    //     console.log('Socket is closed !');
+    // });
+    
+    // component.udpserver.bind(2222);
+    
+    // setTimeout(function(){
+    //     component.udpserver.close();
+    // },8000);
 }
 
 // =======================================================================================
