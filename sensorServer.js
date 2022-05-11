@@ -43,12 +43,15 @@ var WebGuiHandler       = require('./webGuiHandler');
 var FunctionalComponent = require('./functionalComponent');
 var SyncManager         = require('./syncManager');
 var events              = require('events');
+var udp                 = require('dgram');
 
 // =======================================================================================
 // Constants
 // =======================================================================================
 const RECORDINGS_PATH = "/data/",
       RECORDING_BUFFER_TIME = 1000000;
+
+const UDP_PORT = 56830;
 
 // =======================================================================================
 // State transitions table
@@ -62,7 +65,7 @@ var transitions =
 		stateName: 'Powering-on',
 		eventName: 'blePoweredOn',
 		nextState: 'Idle',
-		
+
 		transFunc:function( component, parameters )
 	    {
             // NOP
@@ -72,7 +75,7 @@ var transitions =
 		stateName: 'Idle',
 		eventName: 'startScanning',
 		nextState: 'Idle',
-		
+
 		transFunc:function( component, parameters )
 	    {
             component.sensors = {};
@@ -97,17 +100,17 @@ var transitions =
 		stateName: 'Idle',
 		eventName: 'bleScanningStarted',
 		nextState: 'Scanning',
-		
+
 		transFunc:function( component, parameters )
 	    {
-            component.gui.sendGuiEvent( 'scanningStarted' );	   
+            component.gui.sendGuiEvent( 'scanningStarted' );
         }
     },
     {
 		stateName: 'Idle',
 		eventName: 'connectSensors',
 		nextState: 'Connect next?',
-		
+
 		transFunc:function( component, parameters )
 	    {
 	    }
@@ -119,7 +122,7 @@ var transitions =
 		stateName: 'Scanning',
 		eventName: 'bleSensorDiscovered',
 		nextState: 'New sensor?',
-		
+
 		transFunc:function( component, parameters )
 	    {
             component.discoveredSensor = parameters.sensor;
@@ -129,7 +132,7 @@ var transitions =
 		stateName: 'Scanning',
 		eventName: 'stopScanning',
 		nextState: 'Scanning',
-		
+
 		transFunc:function( component, parameters )
 	    {
             component.ble.stopScanning();
@@ -139,7 +142,7 @@ var transitions =
 		stateName: 'Scanning',
 		eventName: 'bleScanningStopped',
 		nextState: 'Idle',
-		
+
 		transFunc:function( component, parameters )
 	    {
             component.gui.sendGuiEvent( 'scanningStopped' );
@@ -152,7 +155,7 @@ var transitions =
 		stateName: 'New sensor?',
 		eventName: 'yes',
 		nextState: 'Scanning',
-		
+
 		transFunc:function( component, parameters )
 	    {
             if( component.sensors[component.discoveredSensor.address] == undefined )
@@ -161,12 +164,12 @@ var transitions =
             }
             component.discoveredSensors.push( component.discoveredSensor );
             component.gui.sendGuiEvent
-            ( 
-                'sensorDiscovered', 
-                { 
+            (
+                'sensorDiscovered',
+                {
                     name:    component.discoveredSensor.name,
                     address: component.discoveredSensor.address
-                } 
+                }
             );
 	    }
     },
@@ -174,7 +177,7 @@ var transitions =
 		stateName: 'New sensor?',
 		eventName: 'no',
 		nextState: 'Scanning',
-		
+
 		transFunc:function( component, parameters )
 	    {
             // NOP
@@ -187,7 +190,7 @@ var transitions =
 		stateName: 'Connect next?',
 		eventName: 'yes',
 		nextState: 'Connecting',
-		
+
 		transFunc:function( component, parameters )
 	    {
             if( parameters == undefined ) return;
@@ -199,7 +202,7 @@ var transitions =
             var sensor = component.sensors[address];
 
             if( sensor != undefined )
-            {                
+            {
                 component.ble.connectSensor( sensor );
             }
 	    }
@@ -208,7 +211,7 @@ var transitions =
 		stateName: 'Connect next?',
 		eventName: 'no',
 		nextState: 'Sensor connected',
-		
+
 		transFunc:function( component, parameters )
 	    {
 	    }
@@ -217,7 +220,7 @@ var transitions =
 		stateName: 'Connecting',
 		eventName: 'bleSensorDisconnected',
 		nextState: 'Idle',
-		
+
 		transFunc:function( component, parameters )
 	    {
             removeSensor( parameters.sensor, component.connectedSensors );
@@ -228,7 +231,7 @@ var transitions =
 		stateName: 'Connecting',
 		eventName: 'stopConnectingSensors',
 		nextState: 'Idle',
-		
+
 		transFunc:function( component, parameters )
 	    {
             if( parameters == undefined ) return;
@@ -256,7 +259,7 @@ var transitions =
 		stateName: 'Sensor connected',
 		eventName: 'stopConnectingSensors',
 		nextState: 'Idle',
-		
+
 		transFunc:function( component, parameters )
 	    {
             if( parameters == undefined ) return;
@@ -277,7 +280,7 @@ var transitions =
 		stateName: 'Idle',
 		eventName: 'bleSensorConnected',
 		nextState: 'Sensor disconnected?',
-		
+
 		transFunc:function( component, parameters )
 	    {
             if( parameters == undefined ) return;
@@ -298,7 +301,7 @@ var transitions =
 		stateName: 'StopConnectingSensors',
 		eventName: 'connectSensors',
 		nextState: 'StopConnectingSensors',
-		
+
 		transFunc:function( component, parameters )
 	    {
 	    }
@@ -307,7 +310,7 @@ var transitions =
 		stateName: 'StopConnectingSensors',
 		eventName: 'stopConnectingSensors',
 		nextState: 'StopConnectingSensors',
-		
+
 		transFunc:function( component, parameters )
 	    {
 	    }
@@ -316,7 +319,7 @@ var transitions =
 		stateName: 'Idle',
 		eventName: 'bleSensorDisconnected',
 		nextState: 'Idle',
-		
+
 		transFunc:function( component, parameters )
 	    {
             removeSensor( parameters.sensor, component.connectedSensors );
@@ -327,7 +330,7 @@ var transitions =
 		stateName: 'Connecting',
 		eventName: 'bleSensorConnected',
 		nextState: 'Sensors connected?',
-		
+
 		transFunc:function( component, parameters )
 	    {
             component.connectedSensors.push( parameters.sensor );
@@ -340,7 +343,7 @@ var transitions =
 		stateName: 'Connecting',
 		eventName: 'bleSensorError',
 		nextState: 'Connect next?',
-		
+
 		transFunc:function( component, parameters )
 	    {
 	    }
@@ -349,7 +352,7 @@ var transitions =
 		stateName: 'Idle',
 		eventName: 'disconnectSensors',
 		nextState: 'Sensor disconnected?',
-		
+
 		transFunc:function( component, parameters )
 	    {
 	    }
@@ -413,7 +416,7 @@ var transitions =
 		stateName: 'Idle',
 		eventName: 'startMeasuring',
 		nextState: 'StartMeasuring',
-		
+
 		transFunc:function( component, parameters )
 	    {
             var len = parameters.addresses;
@@ -438,7 +441,7 @@ var transitions =
 		stateName: 'Sensor connected',
 		eventName: 'startMeasuring',
 		nextState: 'StartMeasuring',
-		
+
 		transFunc:function( component, parameters )
 	    {
             var len = parameters.addresses;
@@ -463,7 +466,7 @@ var transitions =
 		stateName: 'Sensor connected',
 		eventName: 'bleSensorDisconnected',
 		nextState: 'Idle',
-		
+
 		transFunc:function( component, parameters )
 	    {
             removeSensor( parameters.sensor, component.connectedSensors );
@@ -474,7 +477,7 @@ var transitions =
 		stateName: 'Sensor connected',
 		eventName: 'connectSensors',
 		nextState: 'Connect next?',
-		
+
 		transFunc:function( component, parameters )
 	    {
 	    }
@@ -483,7 +486,7 @@ var transitions =
 		stateName: 'Sensor disconnected?',
 		eventName: 'yes',
 		nextState: 'Idle',
-		
+
 		transFunc:function( component, parameters )
 	    {
 	    }
@@ -492,7 +495,7 @@ var transitions =
 		stateName: 'Sensor disconnected?',
 		eventName: 'no',
 		nextState: 'Disconnecting',
-		
+
 		transFunc:function( component, parameters )
 	    {
             if( parameters == undefined ) return;
@@ -513,7 +516,7 @@ var transitions =
 		stateName: 'Disconnecting',
 		eventName: 'bleSensorDisconnected',
 		nextState: 'Sensor disconnected?',
-		
+
 		transFunc:function( component, parameters )
 	    {
             removeSensor( parameters.sensor, component.connectedSensors );
@@ -524,7 +527,7 @@ var transitions =
 		stateName: 'Sensors connected?',
 		eventName: 'yes',
 		nextState: 'Sensor connected',
-		
+
 		transFunc:function( component, parameters )
 	    {
 	    }
@@ -533,7 +536,7 @@ var transitions =
 		stateName: 'Sensors connected?',
 		eventName: 'no',
 		nextState: 'Idle',
-		
+
 		transFunc:function( component, parameters )
 	    {
 	    }
@@ -546,7 +549,7 @@ var transitions =
 		stateName: 'Start next?',
 		eventName: 'yes',
 		nextState: 'Enabling',
-		
+
 		transFunc:function( component, parameters )
 	    {
 	    }
@@ -555,7 +558,7 @@ var transitions =
 		stateName: 'Start next?',
 		eventName: 'no',
 		nextState: 'Measuring',
-		
+
 		transFunc:function( component, parameters )
 	    {
         }
@@ -564,7 +567,7 @@ var transitions =
 		stateName: 'StartMeasuring',
 		eventName: 'bleSensorEnabled',
 		nextState: 'Start next?',
-		
+
 		transFunc:function( component, parameters )
 	    {
             component.measuringSensors.push( parameters.sensor );
@@ -575,19 +578,19 @@ var transitions =
 		stateName: 'StartMeasuring',
 		eventName: 'bleSensorDisconnected',
 		nextState: 'Idle',
-		
+
 		transFunc:function( component, parameters )
 	    {
             removeSensor( parameters.sensor, component.connectedSensors );
             removeSensor( parameters.sensor, component.measuringSensors );
-            component.gui.sendGuiEvent( 'sensorDisconnected', {address:parameters.sensor.address} );	    
+            component.gui.sendGuiEvent( 'sensorDisconnected', {address:parameters.sensor.address} );
         }
     },
     {
 		stateName: 'Enabling',
 		eventName: 'bleSensorDisconnected',
 		nextState: 'Idle',
-		
+
 		transFunc:function( component, parameters )
 	    {
             removeSensor( parameters.sensor, component.connectedSensors );
@@ -599,7 +602,7 @@ var transitions =
 		stateName: 'Enabling',
 		eventName: 'bleSensorData',
 		nextState: 'Enabling',
-		
+
 		transFunc:function( component, parameters )
 	    {
             // NOP
@@ -609,7 +612,7 @@ var transitions =
 		stateName: 'Enabling',
 		eventName: 'bleSensorError',
 		nextState: 'Start next?',
-		
+
 		transFunc:function( component, parameters )
 	    {
             component.ble.disconnectSensor( parameters.sensor );
@@ -619,17 +622,17 @@ var transitions =
 		stateName: 'Measuring',
 		eventName: 'stopMeasuring',
 		nextState: 'StopMeasuring',
-		
+
 		transFunc:function( component, parameters )
 	    {
             if( parameters == undefined ) return;
-            
+
             var address = parameters.addresses[0];
-            
+
             if( address == undefined ) return;
-            
+
             var sensor = component.sensors[address];
-            
+
             if( sensor != undefined )
             {
                 component.ble.disableSensor( sensor, parameters.measuringPayloadId );
@@ -641,7 +644,7 @@ var transitions =
 		stateName: 'Measuring',
 		eventName: 'bleSensorDisconnected',
 		nextState: 'Idle',
-		
+
 		transFunc:function( component, parameters )
 	    {
             removeSensor( parameters.sensor, component.connectedSensors );
@@ -653,7 +656,7 @@ var transitions =
 		stateName: 'Measuring',
 		eventName: 'bleSensorData',
 		nextState: 'Measuring',
-		
+
 		transFunc:function( component, parameters )
 	    {
 	    }
@@ -708,7 +711,7 @@ var transitions =
 		stateName: 'Measuring',
 		eventName: 'startRecording',
 		nextState: 'Measuring',
-		
+
 		transFunc:function( component, parameters )
 	    {
             startRecordingToFile( component, parameters.filename );
@@ -718,7 +721,7 @@ var transitions =
 		stateName: 'Measuring',
 		eventName: 'fsOpen',
 		nextState: 'Recording',
-		
+
 		transFunc:function( component, parameters )
 	    {
             var now = new Date();
@@ -788,7 +791,7 @@ var transitions =
 		stateName: 'Stop next?',
 		eventName: 'yes',
 		nextState: 'Disabling',
-		
+
 		transFunc:function( component, parameters )
 	    {
 	    }
@@ -797,7 +800,7 @@ var transitions =
 		stateName: 'Stop next?',
 		eventName: 'no',
 		nextState: 'Sensor connected',
-		
+
 		transFunc:function( component, parameters )
 	    {
             component.gui.sendGuiEvent( 'allSensorsDisabled' );
@@ -807,7 +810,7 @@ var transitions =
 		stateName: 'StopMeasuring',
 		eventName: 'bleSensorDisabled',
 		nextState: 'Stop next?',
-		
+
 		transFunc:function( component, parameters )
 	    {
             component.gui.sendGuiEvent( 'sensorDisabled', {address:parameters.sensor.address} );
@@ -817,7 +820,7 @@ var transitions =
 		stateName: 'StopMeasuring',
 		eventName: 'bleSensorDisconnected',
 		nextState: 'Idle',
-		
+
 		transFunc:function( component, parameters )
 	    {
             removeSensor( parameters.sensor, component.connectedSensors );
@@ -828,7 +831,7 @@ var transitions =
 		stateName: 'Disabling',
 		eventName: 'bleSensorError',
 		nextState: 'Stop next?',
-		
+
 		transFunc:function( component, parameters )
 	    {
             console.log( "bleSensorError:" + parameters.error );
@@ -839,7 +842,7 @@ var transitions =
 		stateName: 'Disabling',
 		eventName: 'bleSensorData',
 		nextState: 'Disabling',
-		
+
 		transFunc:function( component, parameters )
 	    {
             // NOP
@@ -849,7 +852,7 @@ var transitions =
 		stateName: 'Disabling',
 		eventName: 'bleSensorDisconnected',
 		nextState: 'Idle',
-		
+
 		transFunc:function( component, parameters )
 	    {
             removeSensor( parameters.sensor, component.connectedSensors );
@@ -864,7 +867,7 @@ var transitions =
 		stateName: 'Recording',
 		eventName: 'bleSensorDisconnected',
 		nextState: 'Idle',
-		
+
 		transFunc:function( component, parameters )
 	    {
             removeSensor( parameters.sensor, component.connectedSensors );
@@ -876,11 +879,22 @@ var transitions =
 		stateName: 'Recording',
 		eventName: 'bleSensorData',
 		nextState: 'Store data?',
-		
+
 		transFunc:function( component, parameters )
 	    {
             component.lastTimestamp = parameters.timestamp;
-            component.csvBuffer += Object.values(parameters).join() + '\n';
+
+			var data = Object.values(parameters).join();
+
+            component.csvBuffer += data + '\n';
+
+            var udp_data = Buffer.from(data + '\n');
+            component.udpclient.send(udp_data, UDP_PORT, '127.0.0.1', (error) => {
+                if (error) {
+					console.log('Error sending over UDP:', error);
+					component.udpclient.close();
+                }
+            });
 
             component.gui.sendGuiEvent( 'sensorOrientation', parameters );
 	    }
@@ -889,7 +903,7 @@ var transitions =
 		stateName: 'Recording',
 		eventName: 'stopRecording',
 		nextState: 'Recording',
-		
+
 		transFunc:function( component, parameters )
 	    {
             component.fileStream.write( component.csvBuffer );
@@ -900,7 +914,7 @@ var transitions =
 		stateName: 'Recording',
 		eventName: 'fsClose',
 		nextState: 'Idle',
-		
+
 		transFunc:function( component, parameters )
 	    {
             component.gui.sendGuiEvent( 'recordingStopped' );
@@ -910,7 +924,7 @@ var transitions =
 		stateName: 'Store data?',
 		eventName: 'yes',
 		nextState: 'Recording',
-		
+
 		transFunc:function( component, parameters )
 	    {
             component.fileStream.write( component.csvBuffer );
@@ -922,7 +936,7 @@ var transitions =
 		stateName: 'Store data?',
 		eventName: 'no',
 		nextState: 'Recording',
-		
+
 		transFunc:function( component, parameters )
 	    {
             // NOP
@@ -937,7 +951,7 @@ var transitions =
 var choicePoints =
 [
     {
-        name:'Connect next?', 
+        name:'Connect next?',
         evalFunc: function( component, parameters )
         {
             if( parameters == undefined ) return;
@@ -958,28 +972,28 @@ var choicePoints =
         }
     },
     {
-        name:'Start next?', 
+        name:'Start next?',
         evalFunc: function( component, parameters )
         {
             return false;
         }
     },
     {
-        name:'Store data?', 
+        name:'Store data?',
         evalFunc: function( component )
         {
             return ( component.lastTimestamp - component.lastWriteTime > RECORDING_BUFFER_TIME );
         }
     },
     {
-        name:'Stop next?', 
+        name:'Stop next?',
         evalFunc: function( component )
         {
             return false;
         }
     },
     {
-        name:'Sensor disconnected?', 
+        name:'Sensor disconnected?',
         evalFunc: function( component, parameters )
         {
             if( parameters == undefined ) return;
@@ -1000,14 +1014,14 @@ var choicePoints =
         }
     },
     {
-        name:'New sensor?', 
+        name:'New sensor?',
         evalFunc: function( component )
         {
             return ( component.discoveredSensors.indexOf(component.discoveredSensor) == -1 );
         }
     },
     {
-        name:'Sensors connected?', 
+        name:'Sensors connected?',
         evalFunc: function( component, parameters )
         {
             if( parameters == undefined ) return;
@@ -1027,7 +1041,7 @@ var choicePoints =
             return false;
         }
     },
-   
+
 ];
 
 // =======================================================================================
@@ -1036,7 +1050,7 @@ var choicePoints =
 class SensorServer extends FunctionalComponent
 {
     constructor()
-    {        
+    {
         super( "SensorServer", transitions, choicePoints );
 
         var component = this;
@@ -1056,6 +1070,7 @@ class SensorServer extends FunctionalComponent
         this.measuringSensors   = [];
         this.discoveredSensor   = null;
         this.fileStream         = null;
+        this.udpclient          = null;
         this.csvBuffer          = "";
         this.recordingStartime  = 0;
         this.measuringPayloadId = 0;
@@ -1102,23 +1117,32 @@ function startRecordingToFile( component, name )
         return;
     }
 
+    // filestream
     component.fileStream = fs.createWriteStream( fullPath );
-    
+
     const hrTime = process.hrtime();
     component.recordingStartTime = hrTime[0] * 1000000 + hrTime[1] / 1000;
     component.lastWriteTime = component.recordingStartTime;
 
     component.csvBuffer = "";
 
-    component.fileStream.on( 'open', function() 
+    component.fileStream.on( 'open', function()
     {
         component.eventHandler( 'fsOpen' );
     });
 
-    component.fileStream.on( 'close', function() 
+    component.fileStream.on( 'close', function()
     {
         component.eventHandler( 'fsClose' );
     });
+
+	// udp
+    component.udpclient = udp.createSocket('udp4');
+
+	component.udpclient.on("error", function (error) {
+		console.log("UDP Error:", error);
+		component.udpclient.close();
+	});
 }
 
 // =======================================================================================
